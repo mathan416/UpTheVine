@@ -1,0 +1,12 @@
+name=Up the Vine
+author=Mathan Games
+description=You like it rough? These vines do too!
+bundleID=com.mathanca.utv
+version=1.0
+buildNumber=1
+imagePath=images
+launchSoundPath=sounds
+contentWarning=This game contains fun and realistic jungle action.
+contentWarning2=This game contains no flashing content and is suitable for photosensitive epilepsy.
+pdxversion=20703
+buildtime=806722472
