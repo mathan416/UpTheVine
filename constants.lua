@@ -6,4 +6,4 @@ kCollisionGroupCollectable = 4
 kCollisionGroupEnemy = 5
 
 -- Debugging
-DEBUG_MODE = false
+DEBUG_MODE = true
