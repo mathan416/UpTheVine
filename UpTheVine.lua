@@ -74,6 +74,36 @@ local function resetGame()
     GameState.gamelevel = 1
 end
 
+-- Optional: centralize persistence
+local function saveGame()
+    -- TODO: write your save data (high score, progress, etc.)
+    -- playdate.datastore.write({ highScore = ... }, "your_save")
+end
+
+-- Call when you want to purge scene objects and timers
+local function cleanupScene()
+    -- Stop/clear timers
+    if playdate.timer.allTimers then
+        for _, t in ipairs(playdate.timer.allTimers()) do
+            if t and t.remove then t:remove() end
+        end
+    end
+
+    -- Remove all sprites
+    playdate.graphics.sprite.removeAll()
+
+    -- Release background callback
+    gfx.sprite.setBackgroundDrawingCallback(nil)
+
+    -- Stop any audio (guarded)
+    if sfx then
+        for _, syn in pairs(sfx) do
+            if syn and syn.stop then syn:stop() end
+        end
+    end
+    if musicPlayer and musicPlayer.stop then musicPlayer:stop() end
+end
+
 -- Game Update Function
 function playdate.update()
     -- Initialize
@@ -178,12 +208,16 @@ function playdate.update()
         if DEBUG_MODE then print("DEBUG: pendingGameOver: ",GameState.pendingGameOver) end
         if GameState.pendingGameOver == true then
             GameState.pendingGameOver = false
-            
+            playdate.timer.performAfterDelay(3000, function()
+                GameState.state = "splash"
+                cleanupScene()     -- optional: clear sprites/timers/background first
+                resetGame()
+            end)
             -- Block for 3 seconds
-            playdate.wait(3000)
-            playdate.display.flush()
-            GameState.state = "splash"
-            resetGame()
+            --playdate.wait(3000)
+            --playdate.display.flush()
+            --GameState.state = "splash"
+            --resetGame()
         end
     end
 
@@ -191,16 +225,45 @@ function playdate.update()
         gfx.setColor(gfx.kColorBlack)
         playdate.drawFPS(200, 120)
     end
+end
 
-    -- Automatically save game data when the device goes
-    -- to low-power sleep mode because of a low battery
-    function playdate.gameWillSleep()
-        --saveGame()
+-- Helpers
+local function stopAllAudio()
+    if sfx then
+        for _, syn in pairs(sfx) do
+            if syn and syn.stop then syn:stop() end
+        end
     end
+    if musicPlayer and musicPlayer.stop then musicPlayer:stop() end
+end
 
-    -- Automatically save game data when the player chooses
-    -- to exit the game via the System Menu or Menu button
-    function playdate.gameWillTerminate()
-        --saveGame()
-    end
+-- Called when user opens System Menu (pause) or app is backgrounded
+function playdate.gameWillPause()
+    saveGame()
+    -- optional:
+    -- stopAllAudio()
+end
+
+-- Called when device is about to sleep (low power, lid close, etc.)
+function playdate.deviceWillSleep()
+    saveGame()
+    stopAllAudio() -- nice to be polite
+end
+
+-- Called when user exits the game
+function playdate.gameWillTerminate()
+    saveGame()
+    cleanupScene() -- remove timers/sprites, clear bg callbacks, stop audio
+end
+
+-- Called when resuming from pause (System Menu closed)
+function playdate.gameWillResume()
+    -- restore audio, resume timers if needed
+    -- musicPlayer:play() or re-init background callback
+end
+
+-- Called when waking from device sleep
+function playdate.deviceDidWake()
+    -- same idea as above, but device-level
+    -- refresh background image if you were using setBackgroundDrawingCallback
 end
