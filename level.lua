@@ -69,7 +69,7 @@ function Level:spawnInitialVines()
     -- Create and add vine
     local x = xSlots[slotIndex]
     local height = math.random(70, 100)
-    local radius = math.random(3, 5)
+    local radius = math.random(5, 7)
     local vineBottomY = math.random(platformTopY - 50, platformTopY)
     local y = vineBottomY - height / 2
 

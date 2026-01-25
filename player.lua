@@ -2,6 +2,7 @@ import "CoreLibs/object"
 import "CoreLibs/graphics"
 import "CoreLibs/sprites"
 import "CoreLibs/timer"
+import "CoreLibs/animation"
 import "particle"
 import "platform"
 import "constants"
@@ -10,11 +11,31 @@ class("Player").extends(playdate.graphics.sprite)
 
 local gfx = playdate.graphics
 
+-- Animation sequences (frame indices for your sprite sheet)
+-- ✅ module-level constant: no per-frame allocation
+local ANIM_SEQS = {
+    idle  = {2, 1},  -- blink → standing
+    left  = {3, 1},  -- left → standing
+    right = {4, 1},  -- right → standing
+    up    = {5, 1},  -- climb up → standing
+    down  = {6, 1},  -- down / ground pound → standing
+}
+
 -- Constructor
 function Player:init(x, y)
-    -- Setup player image and collision type
-    self.image = gfx.image.new("images/player")
-    self:setImage(self.image)
+    -- Load player sprite sheet (6 images)
+    self.imageTable = gfx.imagetable.new("images/player")
+    assert(self.imageTable, "Missing player image table!")
+
+    -- Animation state (ANIM_SEQS-driven)
+    self.animName = "idle"
+    self.animFrameIdx = 1
+    self.animTimerMs = 0
+    self.animSpeedMs = 400
+
+    -- Set initial image from the idle sequence
+    self:setImage(self.imageTable:getImage(ANIM_SEQS.idle[1]))
+
     self:moveTo(x, y)
     self:setCollideRect(0, 0, self:getSize())
     self:setGroups({ kCollisionGroupPlayer })
@@ -22,6 +43,7 @@ function Player:init(x, y)
     self.collisionType = kCollisionGroupPlayer
     self.collisionResponse = gfx.sprite.kCollisionTypeOverlap
     self:add()
+
     self.invincible = false
 
     -- Gravity physics
@@ -48,16 +70,78 @@ function Player:init(x, y)
     self.pendingVineAttach = false
 end
 
--- Update function
+-- =========================
+-- Animation helpers
+-- =========================
+function Player:setAnim(name, speedMs)
+    if name == self.animName then
+        if speedMs then self.animSpeedMs = speedMs end
+        return
+    end
+
+    self.animName = name
+    self.animFrameIdx = 1
+    self.animTimerMs = 0
+    if speedMs then self.animSpeedMs = speedMs end
+
+    local seq = ANIM_SEQS[self.animName] or ANIM_SEQS.idle
+    self:setImage(self.imageTable:getImage(seq[self.animFrameIdx]))
+end
+
+function Player:stepAnim(dtMs)
+    local seq = ANIM_SEQS[self.animName] or ANIM_SEQS.idle
+    if #seq <= 1 then return end
+
+    self.animTimerMs += dtMs
+    if self.animTimerMs < self.animSpeedMs then return end
+    self.animTimerMs = 0
+
+    self.animFrameIdx += 1
+    if self.animFrameIdx > #seq then
+        self.animFrameIdx = 1
+    end
+
+    self:setImage(self.imageTable:getImage(seq[self.animFrameIdx]))
+end
+
+function Player:updateAnimation()
+    local newAnim = "idle"
+    local speedMs = 400
+
+    -- Determine current animation state
+    if self.vy > 2 then
+        -- Ground pound or falling fast
+        newAnim, speedMs = "down", 100
+    elseif self.isOnVine and self.vy < 0 then
+        -- Climbing up vine
+        newAnim, speedMs = "up", 200
+    elseif self.isOnVine and self.vy > 0 then
+        -- Climbing down vine
+        newAnim, speedMs = "down", 200
+    elseif self.vx < 0 then
+        -- Moving left
+        newAnim, speedMs = "left", 100
+    elseif self.vx > 0 then
+        -- Moving right
+        newAnim, speedMs = "right", 100
+    end
+
+    self:setAnim(newAnim, speedMs)
+    self:stepAnim(1000 / 30) -- assuming 30fps
+end
+
+-- =========================
+-- Update
+-- =========================
 function Player:update()
     self.onGround = false
 
-    -- We are in the air, let gavity take hold
+    -- Gravity (only when not on vine)
     if not self.onGround and not self.isOnVine then
         self.vy = self.vy + self.gravity
     end
 
-    -- Move the sprite 
+    -- Move vertically first (collision-resolve Y)
     local tentativeY = self.y + self.vy
     local _, actualY, collisions, length = self:moveWithCollisions(self.x, tentativeY)
     local resolvedY = actualY
@@ -69,6 +153,7 @@ function Player:update()
 
         -- If we hit a Flying Enemy
         if other:isa(FlyingEnemy) and not self.invincible then
+            if Sound and Sound.playFlyingEnemyHitSound then Sound.playFlyingEnemyHitSound() end
             self:handleHit()
             resolvedY = actualY
             break
@@ -76,19 +161,19 @@ function Player:update()
 
         -- If we hit a Vine Enemy
         if other:isa(VineEnemy) and not self.invincible then
+            if Sound and Sound.playVineEnemyHitSound then Sound.playVineEnemyHitSound() end
             self:handleHit()
             resolvedY = actualY
             break
         end
 
-        -- Are we on the platform
+        -- Are we on the platform?
         if other.collisionType == kCollisionGroupPlatform and self.vy > 0 then
             -- Trigger Game over if we die while falling
             if GameState.pendingGameOver then
-                playdate.wait(1000)
+                playdate.wait(500)
                 playdate.display.flush()
                 GameState.state = "gameover"
-                -- GameState.pendingGameOver = false
                 break
             end
 
@@ -109,20 +194,20 @@ function Player:update()
         end
     end
 
-    -- Call andle input and then move 
+    -- Handle input (sets vx, and may modify vy/isOnVine)
     self:handleInput()
 
-    -- Move player if on the edge
+    -- Move horizontally (clamp X) and apply resolved Y
     local nextX = math.max(self.width / 2, math.min(400 - self.width / 2, self.x + self.vx))
     self:moveTo(nextX, resolvedY)
 
-    -- If we're not on the ground, not on a vine, and not airport, ensure airbone from a jump 
-    -- Is nil - we might be bouncing or falling
+    -- If we're not on the ground, not on a vine, and airborneFromJump is nil,
+    -- we're likely bouncing/falling so ensure it's set
     if not self.onGround and not self.isOnVine and self.airborneFromJump == nil then
         self.airborneFromJump = false
     end
 
-    -- Allow a short jump onto a vine
+    -- Allow a short jump onto a vine (attach on descent)
     if self.pendingVineAttach and self.vy > 0 then
         for _, vine in ipairs(gfx.sprite.getAllSprites()) do
             if vine:isa(Vine) and self:boundsOverlap(vine) then
@@ -138,12 +223,35 @@ function Player:update()
 
     -- Check for collectables and vines
     self:checkCollectables()
-    self:checkVine()
+    self:checkVine() -- finalizes isOnVine for this frame
 
+    -- Update animation based on current state
+    self:updateAnimation()
+
+    -- ✅ Shuffle noise: controlled + restart-safe
+    -- Use INPUT intent rather than vx/vy to avoid edge-case frames (vine attach/detach, etc.)
+    local movingNow = false
+    if self.isOnVine then
+        movingNow =
+            playdate.buttonIsPressed(playdate.kButtonUp) or
+            playdate.buttonIsPressed(playdate.kButtonDown)
+    elseif self.onGround then
+        movingNow =
+            playdate.buttonIsPressed(playdate.kButtonLeft) or
+            playdate.buttonIsPressed(playdate.kButtonRight)
+    else
+        movingNow = false
+    end
+
+    if Sound and Sound.setShuffleMoving then
+        Sound.setShuffleMoving(movingNow, 1.0)
+    end
+
+    -- Reset horizontal velocity each frame (re-applied in handleInput)
     self.vx = 0
 end
 
--- If we're hit, drop life, display particles, breifly invincible
+-- If we're hit, drop life, display particles, briefly invincible
 function Player:handleHit()
     GameState.lives = math.max(GameState.lives - 1, 0)
     self:spawnHitParticles()
@@ -153,7 +261,7 @@ function Player:handleHit()
     end)
 end
 
--- What happens with the controler
+-- What happens with the controller
 function Player:handleInput()
     -- Move left or right
     if playdate.buttonIsPressed(playdate.kButtonLeft) then
@@ -180,10 +288,10 @@ function Player:handleInput()
         end
     end
 
-    -- If A, then allowjump
+    -- If A, then allow jump
     if playdate.buttonJustPressed(playdate.kButtonA) then
         local overlappingVine = false
-        
+
         -- Check if we're jumping on a vine
         for _, vine in ipairs(gfx.sprite.getAllSprites()) do
             if vine:isa(Vine) and self:boundsOverlap(vine) then
@@ -220,7 +328,6 @@ function Player:handleInput()
     end
 end
 
-
 -- Ground Pound
 function Player:performGroundPound()
     self.vy = self.groundPoundSpeed
@@ -235,7 +342,6 @@ function Player:checkVine()
     local foundVine = false
     if self.pendingVineAttach then return end
 
-    -- Set variables if we're on a vine
     if not self.preventVineGrab then
         for _, vine in ipairs(gfx.sprite.getAllSprites()) do
             if vine:isa(Vine) and self:boundsOverlap(vine) then
@@ -258,12 +364,13 @@ function Player:checkVine()
     end
 end
 
--- Check if we're touch ing a collectable
+-- Check if we're touching a collectable
 function Player:checkCollectables()
     for _, sprite in ipairs(gfx.sprite.getAllSprites()) do
         if sprite:isa(Collectable) and self:boundsOverlap(sprite) then
             sprite:remove()
             GameState.score = GameState.score + 100
+            if Sound and Sound.playDiamondPickupSound then Sound.playDiamondPickupSound() end
         end
     end
 end

@@ -4,7 +4,8 @@ import "constants"
 import "platform"
 
 local gfx = playdate.graphics
-
+local enemyTable = gfx.imagetable.new("images/vine_enemy")
+assert(enemyTable)
 class("VineEnemy").extends(gfx.sprite)
 
 -- Constructor
@@ -15,7 +16,7 @@ function VineEnemy:init(vine, speed)
     self.direction = 1
 
     -- Get image
-    self.images = gfx.imagetable.new("images/vine_enemy")
+    self.images = enemyTable
     assert(self.images, "vine_enemy image table failed to load")
     self.animation = gfx.animation.loop.new(500, self.images, true)
     self:setImage(self.animation:image())

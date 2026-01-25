@@ -1,5 +1,5 @@
 local GameData = {
-    highScore = 12345,
+    highScore = 0,
     achievements = {
         vineMaster = false,
         firstBlood = false,
@@ -8,17 +8,26 @@ local GameData = {
 }
 
 -- Save Game Data 
-local function saveGame()
-    playdate.datastore.write(GameData, "UpTheVine")
+function saveGame(score)
+    if score > GameData.highScore then
+        GameData.highScore = score
+    end
+    playdate.datastore.write(GameData, "UpTheVine2")
 end
 
 -- Load Game Data
-local function loadSavedGame()
-    GameData = playdate.datastore.read("UpTheVine")
-
-    if GameData then
-        print("High score:", GameData.highScore)
+function loadSavedGame()
+    local data = playdate.datastore.read("UpTheVine2")
+    if data then
+        GameData = data
+        print("High score loaded:", GameData.highScore)
     else
-        print("No save file yet")
+        print("No save file yet, starting fresh")
     end
+    return GameData.highScore
+end
+
+-- Get current high score
+function getHighScore()
+    return GameData.highScore
 end

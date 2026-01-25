@@ -5,6 +5,8 @@ import "CoreLibs/animation"
 import "constants"
 
 local gfx = playdate.graphics
+local enemyTable = gfx.imagetable.new("images/flying_enemy")
+assert(enemyTable)
 
 if not math.clamp then
     function math.clamp(val, lower, upper)
@@ -17,10 +19,11 @@ class("FlyingEnemy").extends(gfx.sprite)
 -- Constructor
 function FlyingEnemy:init(startX, y, speed, dir)
     FlyingEnemy.super.init(self)
+    local w, h = playdate.display.getSize()
 
     self.speed = speed * (dir == "left" and -1 or 1)
 
-    self.imgTable = gfx.imagetable.new("images/flying_enemy")
+    self.imgTable = enemyTable
     assert(self.imgTable, "Missing flying_enemy image table!")
 
     -- Animation

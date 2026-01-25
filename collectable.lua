@@ -1,21 +1,28 @@
 import "CoreLibs/object"
 import "CoreLibs/graphics"
 import "CoreLibs/sprites"
+import "CoreLibs/animation"
 
 class("Collectable").extends(playdate.graphics.sprite)
 
 local gfx = playdate.graphics
+local collectableTable = gfx.imagetable.new("images/collectable-table-24-24")
+assert(collectableTable)
 
 -- Global collectibles tracking table
 collectibles = collectibles or {}
 
 -- Constructor
 function Collectable:init(x, y)
-    local image = gfx.image.new("images/collectable")
-    assert(image, "Missing collectable.png image!")
-    self:setImage(image)
-
-    local w, h = image:getSize()
+    -- Load image table
+    local imageTable = collectableTable
+    assert(imageTable, "Missing collectable-table-24-24 image table!")
+    
+    -- Set up animation (optional - animates through all frames)
+    self.animation = gfx.animation.loop.new(150, imageTable, true)
+    self:setImage(self.animation:image())
+    
+    local w, h = self:getSize()
     self:setSize(w, h)
     self:setZIndex(50)
 
@@ -25,6 +32,11 @@ function Collectable:init(x, y)
 
     -- Add self to global collectibles table
     table.insert(collectibles, self)
+end
+
+-- Update for animation
+function Collectable:update()
+    self:setImage(self.animation:image())
 end
 
 -- Destructor

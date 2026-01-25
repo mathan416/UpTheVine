@@ -10,7 +10,7 @@ class("Vine").extends(gfx.sprite)
 -- Constructor
 function Vine:init(x, y, height, radius)
     self.height = height or 100
-    self.radius = radius or 3
+    self.radius = radius or 5
     self.segmentHeight = 16
 
     self:refresh()

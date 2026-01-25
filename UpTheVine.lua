@@ -5,17 +5,26 @@ import "CoreLibs/timer"
 import "constants"
 import "player"
 import "level"
+import "highscore"
+import "sound"
 
 local gfx = playdate.graphics
 
+if _G.__UPTHEVINE_LOADED then
+    return
+end
+_G.__UPTHEVINE_LOADED = true
 
 GameState = {
     score = 0,
     lives = 3,
     gamelevel = 1,
     pendingGameOver = false,
+    gameOverFrames = 0,
     state = "splash",
-    backgroundSet = false
+    backgroundSet = false,
+    returnToState = nil,
+    titleMusicPlayed = false -- no longer used for MP3, but keeping for now
 }
 
 -- Some dimensions
@@ -33,13 +42,17 @@ local gameoverBackground = gfx.image.new("images/gameover")
 assert(gameoverBackground, "Gameplay background failed to load!")
 
 -- Prepare the level and player
+local lastState = nil
 level = Level()
 player = Player(200, 120)
+
+-- Load high score
+loadSavedGame()
 
 -- Randomness
 math.randomseed(playdate.getSecondsSinceEpoch())
 
--- Fonts and Text functions
+-- Fonts
 local boldFont = gfx.font.new("Asheville-Sans-14-Bold")
 local normalFont = gfx.getSystemFont()
 
@@ -51,17 +64,46 @@ local function drawShadowedText(text, x, y)
 end
 
 local function drawLabelWithBackground(label, value, x, y)
-    -- Background box
-    --gfx.setColor(gfx.kColorWhite)
-    --gfx.fillRect(x - 2, y - 2, 80, 18)  -- Adjust width as needed
-
-    -- Text on top
     gfx.setFont(boldFont)
     drawShadowedText(label, x, y)
     gfx.setFont(normalFont)
     gfx.setColor(gfx.kColorWhite)
-    gfx.drawText(value, x + gfx.getTextSize(label) + 5, y+1)
+    gfx.drawText(value, x + gfx.getTextSize(label) + 5, y + 1)
 end
+
+-- ✅ Title music controller (single source of truth)
+local function ensureTitleMusic()
+    if Sound.isMuted() then
+        -- if muted, make sure it stops
+        Sound.stopTitleMusicFile()
+        return
+    end
+
+    if GameState.state == "splash" or GameState.state == "credits" then
+        Sound.playTitleMusicFile()   -- safe to call repeatedly (it checks isPlaying)
+    else
+        Sound.stopTitleMusicFile()
+    end
+end
+
+-- Setup System Menu
+local menu = playdate.getSystemMenu()
+
+menu:addCheckmarkMenuItem("Mute", Sound.isMuted(), function(value)
+    Sound.setMuted(value)
+    -- No need to touch titleMusicPlayed anymore.
+    -- ensureTitleMusic() will handle play/stop based on state + mute.
+end)
+
+local creditsMenuItem = menu:addMenuItem("Credits", function()
+    -- If we're already in credits, don't clobber returnToState
+    if GameState.state ~= "credits" then
+        GameState.returnToState = GameState.state
+    end
+
+    GameState.backgroundSet = false
+    GameState.state = "credits"
+end)
 
 -- Reset Game
 local function resetGame()
@@ -72,71 +114,40 @@ local function resetGame()
     GameState.score = 0
     GameState.lives = 3
     GameState.gamelevel = 1
-end
-
--- Optional: centralize persistence
-local function saveGame()
-    -- TODO: write your save data (high score, progress, etc.)
-    -- playdate.datastore.write({ highScore = ... }, "your_save")
+    GameState.titleMusicPlayed = false -- harmless leftover
 end
 
 -- Call when you want to purge scene objects and timers
 local function cleanupScene()
-    -- Stop/clear timers
     if playdate.timer.allTimers then
         for _, t in ipairs(playdate.timer.allTimers()) do
             if t and t.remove then t:remove() end
         end
     end
 
-    -- Remove all sprites
     playdate.graphics.sprite.removeAll()
-
-    -- Release background callback
     gfx.sprite.setBackgroundDrawingCallback(nil)
 
-    -- Stop any audio (guarded)
-    if sfx then
-        for _, syn in pairs(sfx) do
-            if syn and syn.stop then syn:stop() end
-        end
+    if Sound and Sound.stopAll then
+        Sound.stopAll()
     end
-    if musicPlayer and musicPlayer.stop then musicPlayer:stop() end
 end
 
 -- Game Update Function
 function playdate.update()
-    -- Initialize
     gfx.clear()
-
-    -- Timer
     playdate.timer.updateTimers()
+
+    -- ✅ always enforce correct music for current state
+    ensureTitleMusic()
+
     if DEBUG_MODE then print("DEBUG: GameState.state: "..GameState.state) end
 
-    -- Loading
-        --if allImagesProcessed == false then
-            -- process images
-            --for i = 1, #images do
-                -- some time-consuming process…
-            --    processImage( images[i] )
-                -- draw a progress bar
-            --    local progressPercentage = i / #images
-            --    playdate.graphics.fillRect( 100, 20, 200*progressPercentage, 40 )
-                -- yield to the OS, giving it a chance to update the screen
-            --    coroutine.yield()
-                -- execution will resume here when the OS calls coroutine.resume()
-            --end
-            --allImagesProcessed = true
-        --end
-
-
-    -- Game States
     -- Splash Screen
     if GameState.state == "splash" then
         GameState.pendingGameOver = false
 
-        -- Set Background Refresh Logic and Background
-        if GameState.backgroundSet then  
+        if GameState.backgroundSet then
             gfx.sprite.setBackgroundDrawingCallback(function(x, y, w, h)
                 gfx.setColor(gfx.kColorBlack)
                 gfx.fillRect(x, y, w, h)
@@ -147,78 +158,135 @@ function playdate.update()
         backgroundImage:draw(0, 0)
         gfx.setFont(boldFont)
 
-        -- Start Game on button A
         if playdate.buttonJustPressed(playdate.kButtonA) then
+            -- ensureTitleMusic will stop it once we switch state
             GameState.state = "playing"
         end
 
     -- Playing Game
     elseif GameState.state == "playing" then
-        -- Set Bakcground Refresh Logic
-        if not GameState.backgroundSet then 
+        if not GameState.backgroundSet then
             gfx.sprite.setBackgroundDrawingCallback(function(x, y, width, height)
                 if gameplayBackground then
-                gameplayBackground:draw(0, 0) -- Draw the image at the top-left corner
+                    gameplayBackground:draw(0, 0)
                 end
             end)
-           GameState.backgroundSet = true
+            GameState.backgroundSet = true
         end
 
-        -- Load Game, Render Level
-        --loadSavedGame()
         playdate.graphics.sprite.redrawBackground()
-        level:update()
+
+        if not GameState.pendingGameOver then
+            level:update()
+        end
         gfx.sprite.update()
 
-        -- Set Score, Level and Lives 
         gfx.setColor(gfx.kColorWhite)
         gfx.fillRect(0, 10, 400, 17)
         drawLabelWithBackground("Score:", string.format("%05d", GameState.score), 10, 10)
         drawLabelWithBackground("Level:", tostring(GameState.gamelevel), 175, 10)
         drawLabelWithBackground("Lives:", tostring(GameState.lives), 340, 10)
 
-        -- Initiate Game Over
         if GameState.lives <= 0 and not GameState.pendingGameOver then
             GameState.pendingGameOver = true
-            playdate.timer.performAfterDelay(1000, function()
+            GameState.gameOverFrames = 0
+            Sound.playGameOverSound()
+        end
+
+        if GameState.pendingGameOver then
+            GameState.gameOverFrames += 1
+            if GameState.gameOverFrames >= 20 then
+                playdate.wait(500)
                 GameState.state = "gameover"
-            end)
+                GameState.gameOverFrames = 0
+            end
         end
 
     -- Game Over
     elseif GameState.state == "gameover" then
-        
-        -- Set Bakcground Refresh Logic and Background
-        if GameState.backgroundSet then  
-            gfx.sprite.setBackgroundDrawingCallback(function(x, y, w, h)
-                gfx.setColor(gfx.kColorBlack)
-                gfx.fillRect(x, y, w, h)
-            end)
-            GameState.backgroundSet = false
-        end
         gameoverBackground:draw(0, 0)
 
-        -- Save High Score
-        -- if GameState.score > gameData.highScore then
-        --    gameData.highScore = GameState.score
-        --    saveGame() 
-        -- end
+        if GameState.score > getHighScore() then
+            saveGame(GameState.score)
+        end
 
-        -- Pause 3 seconds and Initiate Splash
-        if DEBUG_MODE then print("DEBUG: pendingGameOver: ",GameState.pendingGameOver) end
+        gfx.setFont(boldFont)
+        local scoreText = "Score: " .. string.format("%05d", GameState.score)
+        local highScoreText = "High Score: " .. string.format("%05d", getHighScore())
+
+        local scoreWidth = gfx.getTextSize(scoreText)
+        local highScoreWidth = gfx.getTextSize(highScoreText)
+
+        drawShadowedText(scoreText, (w - scoreWidth) / 3, 100)
+        drawShadowedText(highScoreText, (w - highScoreWidth) / 3, 120)
+
         if GameState.pendingGameOver == true then
             GameState.pendingGameOver = false
             playdate.timer.performAfterDelay(3000, function()
                 GameState.state = "splash"
-                cleanupScene()     -- optional: clear sprites/timers/background first
+                cleanupScene()
                 resetGame()
             end)
-            -- Block for 3 seconds
-            --playdate.wait(3000)
-            --playdate.display.flush()
-            --GameState.state = "splash"
-            --resetGame()
         end
+
+    -- Credits Screen
+    elseif GameState.state == "credits" then
+        gameplayBackground:draw(0, 0)
+
+        local startY = 15
+        local lineHeight = 16
+        local leftColumnX = 80
+        local rightColumnX = 220
+
+        gfx.setFont(boldFont)
+        local titleText = "UP THE VINE"
+        local titleWidth = gfx.getTextSize(titleText)
+        drawShadowedText(titleText, (w - titleWidth) / 2, startY)
+
+        local currentY = startY + lineHeight + 3
+
+        gfx.setFont(normalFont)
+        drawShadowedText("Created by:", leftColumnX, currentY)
+        gfx.setColor(gfx.kColorWhite)
+        gfx.drawText("Iain Bennett", rightColumnX, currentY)
+        currentY += lineHeight * 2
+
+        drawShadowedText("Programming:", leftColumnX, currentY)
+        gfx.setColor(gfx.kColorWhite)
+        gfx.drawText("Iain Bennett", rightColumnX, currentY)
+        currentY += lineHeight * 2
+
+        drawShadowedText("Art & Design:", leftColumnX, currentY)
+        gfx.setColor(gfx.kColorWhite)
+        gfx.drawText("Chris Hagen", rightColumnX, currentY)
+        currentY += lineHeight
+        gfx.drawText("Iain Bennett", rightColumnX, currentY)
+        currentY += lineHeight * 2
+
+        drawShadowedText("Music & Sound:", leftColumnX, currentY)
+        gfx.setColor(gfx.kColorWhite)
+        gfx.drawText("Iain Bennett", rightColumnX, currentY)
+        currentY += lineHeight
+        gfx.drawText("Aaron Sheppard", rightColumnX, currentY)
+        currentY += lineHeight + 6
+
+        gfx.setFont(boldFont)
+        local footerText = "Press A to Return"
+        local footerWidth = gfx.getTextSize(footerText)
+        drawShadowedText(footerText, (w - footerWidth) / 2, currentY)
+
+        if playdate.buttonJustPressed(playdate.kButtonA) then
+            GameState.state = GameState.returnToState or "splash"
+            GameState.backgroundSet = false
+        end
+    end
+
+    if not _gcFrame then _gcFrame = 0 end
+    _gcFrame += 1
+    if _gcFrame % 60 == 0 then
+         if DEBUG_MODE then
+            print("GC KB:", collectgarbage("count"))
+         end
     end
 
     if DEBUG_MODE then
@@ -229,41 +297,67 @@ end
 
 -- Helpers
 local function stopAllAudio()
-    if sfx then
-        for _, syn in pairs(sfx) do
-            if syn and syn.stop then syn:stop() end
-        end
+    if Sound and Sound.stopAll then
+        Sound.stopAll()
     end
-    if musicPlayer and musicPlayer.stop then musicPlayer:stop() end
 end
 
--- Called when user opens System Menu (pause) or app is backgrounded
 function playdate.gameWillPause()
-    saveGame()
-    -- optional:
-    -- stopAllAudio()
+    saveGame(GameState.score)
+    if Sound.pauseAll then Sound.pauseAll() end
 end
 
--- Called when device is about to sleep (low power, lid close, etc.)
-function playdate.deviceWillSleep()
-    saveGame()
-    stopAllAudio() -- nice to be polite
-end
-
--- Called when user exits the game
 function playdate.gameWillTerminate()
-    saveGame()
-    cleanupScene() -- remove timers/sprites, clear bg callbacks, stop audio
+    saveGame(GameState.score)
+    cleanupScene()
 end
 
--- Called when resuming from pause (System Menu closed)
+local function syncMusicToState()
+    if Sound.isMuted() then
+        Sound.stopAll()
+        return
+    end
+
+    if GameState.state == "splash" or GameState.state == "credits" then
+        -- force restart (helps simulator)
+        Sound.recreateTitlePlayer()
+        Sound.playTitleMusicFile()
+    else
+        Sound.stopTitleMusicFile()
+        --if Sound.playGameplayMusicFile then
+        --    Sound.playGameplayMusicFile()
+        --end
+    end
+end
+
 function playdate.gameWillResume()
-    -- restore audio, resume timers if needed
-    -- musicPlayer:play() or re-init background callback
+    if Sound.isMuted() then return end
+
+    -- Defer restart until the game loop is running again
+    playdate.timer.performAfterDelay(1, function()
+        if Sound.isMuted() then return end
+        if GameState.state == "splash" or GameState.state == "credits" then
+            Sound.forceRestartTitle()
+        end
+    end)
 end
 
--- Called when waking from device sleep
+function playdate.deviceWillLock()
+    playdate.gameWillPause()
+end
+
+function playdate.deviceWillSleep()
+    saveGame(GameState.score)
+    if Sound and Sound.pauseAll then Sound.pauseAll() end
+    if Sound and Sound.stopAll then Sound.stopAll() end
+end
+
 function playdate.deviceDidWake()
-    -- same idea as above, but device-level
-    -- refresh background image if you were using setBackgroundDrawingCallback
+    if Sound.resumeAll then Sound.resumeAll() end
+    syncMusicToState()
+end
+
+function playdate.deviceDidUnlock()
+    if Sound.resumeAll then Sound.resumeAll() end
+    syncMusicToState()
 end
