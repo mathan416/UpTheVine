@@ -163,8 +163,10 @@ end
 function Sound.playDiamondPickupSound()
     if Sound.muted then return end
 
-    local baseNote = 1100
-    local intervals = {0, 4, 7, 12}
+    -- playNote() takes Hertz, so semitone intervals must be converted to a
+    -- frequency ratio (2^(n/12)); adding them directly only shifts a few Hz.
+    local baseHz = 1100
+    local intervals = {0, 4, 7, 12}  -- semitones: root, major 3rd, 5th, octave
     local delayBetween = 30
     local volume = 0.4
     local noteDur = 0.08
@@ -176,9 +178,10 @@ function Sound.playDiamondPickupSound()
         local delay = (i - 1) * delayBetween
         playdate.timer.performAfterDelay(delay, function()
             if Sound.muted then return end
-            local jitter = math.random(-1, 1)
-            synth:playNote(baseNote + interval + jitter, volume, noteDur)
-            synth:playNote(baseNote + interval + jitter + 12, volume * 0.4, noteDur * 0.7)
+            local jitter = math.random(-1, 1) * 0.1 -- ±10 cents of sparkle
+            local hz = baseHz * 2 ^ ((interval + jitter) / 12)
+            synth:playNote(hz, volume, noteDur)
+            synth:playNote(hz * 2, volume * 0.4, noteDur * 0.7) -- octave above
         end)
     end
 end
@@ -189,7 +192,7 @@ function Sound.playFlyingEnemyHitSound()
     local now = playdate.getCurrentTimeMilliseconds()
     if now - lastFlyingHitMs < 80 then return end
     lastFlyingHitMs = now
-    flyingHitSynth:playNote(64, 0.5, 0.12)
+    flyingHitSynth:playMIDINote(64, 0.5, 0.12) -- MIDI E4 (playNote would be 64 Hz)
 end
 
 local lastVineHitMs = -9999
@@ -198,7 +201,7 @@ function Sound.playVineEnemyHitSound()
     local now = playdate.getCurrentTimeMilliseconds()
     if now - lastVineHitMs < 80 then return end
     lastVineHitMs = now
-    vineHitSynth:playNote(48, 0.5, 0.18)
+    vineHitSynth:playMIDINote(48, 0.5, 0.18) -- MIDI C3 (playNote would be 48 Hz)
 end
 
 function Sound.playGameOverSound()

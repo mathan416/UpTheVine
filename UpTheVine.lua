@@ -41,6 +41,9 @@ assert(gameplayBackground, "Gameplay background failed to load!")
 local gameoverBackground = gfx.image.new("images/gameover")
 assert(gameoverBackground, "Gameplay background failed to load!")
 
+-- Randomness (must be seeded before the first Level() is built)
+math.randomseed(playdate.getSecondsSinceEpoch())
+
 -- Prepare the level and player
 local lastState = nil
 level = Level()
@@ -49,17 +52,16 @@ player = Player(200, 120)
 -- Load high score
 loadSavedGame()
 
--- Randomness
-math.randomseed(playdate.getSecondsSinceEpoch())
-
 -- Fonts
 local boldFont = gfx.font.new("Asheville-Sans-14-Bold")
 local normalFont = gfx.getSystemFont()
 
+-- Note: gfx.setColor() does not affect text; text colour comes from
+-- gfx.setImageDrawMode(). All text here is black (the art is white behind it),
+-- and "shadowed" text is drawn twice 1px apart for a heavier, faux-bold look.
 local function drawShadowedText(text, x, y)
-    gfx.setColor(gfx.kColorBlack)
+    gfx.setImageDrawMode(gfx.kDrawModeCopy)
     gfx.drawText(text, x + 1, y + 1)
-    gfx.setColor(gfx.kColorWhite)
     gfx.drawText(text, x, y)
 end
 
@@ -67,7 +69,6 @@ local function drawLabelWithBackground(label, value, x, y)
     gfx.setFont(boldFont)
     drawShadowedText(label, x, y)
     gfx.setFont(normalFont)
-    gfx.setColor(gfx.kColorWhite)
     gfx.drawText(value, x + gfx.getTextSize(label) + 5, y + 1)
 end
 
@@ -223,9 +224,16 @@ function playdate.update()
         if GameState.pendingGameOver == true then
             GameState.pendingGameOver = false
             playdate.timer.performAfterDelay(3000, function()
-                GameState.state = "splash"
                 cleanupScene()
                 resetGame()
+                -- If the player opened Credits from the game-over screen, stay
+                -- there and return to the splash afterwards; otherwise they'd
+                -- come back to a game-over screen with no way out.
+                if GameState.state == "credits" then
+                    GameState.returnToState = "splash"
+                else
+                    GameState.state = "splash"
+                end
             end)
         end
 
@@ -247,24 +255,20 @@ function playdate.update()
 
         gfx.setFont(normalFont)
         drawShadowedText("Created by:", leftColumnX, currentY)
-        gfx.setColor(gfx.kColorWhite)
         gfx.drawText("Iain Bennett", rightColumnX, currentY)
         currentY += lineHeight * 2
 
         drawShadowedText("Programming:", leftColumnX, currentY)
-        gfx.setColor(gfx.kColorWhite)
         gfx.drawText("Iain Bennett", rightColumnX, currentY)
         currentY += lineHeight * 2
 
         drawShadowedText("Art & Design:", leftColumnX, currentY)
-        gfx.setColor(gfx.kColorWhite)
         gfx.drawText("Chris Hagen", rightColumnX, currentY)
         currentY += lineHeight
         gfx.drawText("Iain Bennett", rightColumnX, currentY)
         currentY += lineHeight * 2
 
         drawShadowedText("Music & Sound:", leftColumnX, currentY)
-        gfx.setColor(gfx.kColorWhite)
         gfx.drawText("Iain Bennett", rightColumnX, currentY)
         currentY += lineHeight
         gfx.drawText("Aaron Sheppard", rightColumnX, currentY)
@@ -277,6 +281,7 @@ function playdate.update()
 
         if playdate.buttonJustPressed(playdate.kButtonA) then
             GameState.state = GameState.returnToState or "splash"
+            GameState.returnToState = nil
             GameState.backgroundSet = false
         end
     end

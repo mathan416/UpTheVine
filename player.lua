@@ -187,8 +187,10 @@ function Player:update()
                 self.preventVineGrab = false
             end
 
-            -- We are on the ground
+            -- We are on the ground. A short hop that drifted off its vine
+            -- lands here, so drop the pending attach or checkVine() stays disabled.
             self.onGround = true
+            self.pendingVineAttach = false
             resolvedY = other.y - other.height / 2 - self.height / 2
             break
         end

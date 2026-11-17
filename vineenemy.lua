@@ -56,10 +56,12 @@ function VineEnemy:update()
     -- Move
     self:moveTo(self.vine.x, newY)
 
-    -- If we hit a platform, switch direction
+    -- If we hit a platform, head back up. Always set -1 rather than toggling:
+    -- the enemy can overlap the platform for several frames, and toggling
+    -- each frame would trap it jittering at the bottom of the vine.
     for _, plt in ipairs(gfx.sprite.getAllSprites()) do
         if plt:isa(Platform) and self:boundsOverlap(plt) then
-            self.direction = -self.direction
+            self.direction = -1
             break
         end
     end
