@@ -6,8 +6,8 @@ import "CoreLibs/animation"
 class("Collectable").extends(playdate.graphics.sprite)
 
 local gfx = playdate.graphics
-local collectableTable = gfx.imagetable.new("images/collectable-table-24-24")
-assert(collectableTable)
+local collectableTable = gfx.imagetable.new("images/collectable") -- from collectable-table-16-16.png
+assert(collectableTable, "Missing images/collectable image table!")
 
 -- Global collectibles tracking table
 collectibles = collectibles or {}
@@ -16,7 +16,7 @@ collectibles = collectibles or {}
 function Collectable:init(x, y)
     -- Load image table
     local imageTable = collectableTable
-    assert(imageTable, "Missing collectable-table-24-24 image table!")
+    assert(imageTable, "Missing images/collectable image table!")
     
     -- Set up animation (optional - animates through all frames)
     self.animation = gfx.animation.loop.new(150, imageTable, true)

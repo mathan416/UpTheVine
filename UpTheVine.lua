@@ -53,7 +53,8 @@ player = Player(200, 120)
 loadSavedGame()
 
 -- Fonts
-local boldFont = gfx.font.new("Asheville-Sans-14-Bold")
+local boldFont = gfx.font.new("/System/Fonts/Asheville-Sans-14-Bold")
+assert(boldFont, "Bold font failed to load!")
 local normalFont = gfx.getSystemFont()
 
 -- Note: gfx.setColor() does not affect text; text colour comes from
