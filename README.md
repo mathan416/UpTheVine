@@ -39,6 +39,7 @@ Start on a platform, grab vines, collect every diamond, and survive long enough 
 
 | Path | Purpose |
 | --- | --- |
+| `main.lua` | Entry point required by `pdc`; imports `UpTheVine.lua` |
 | `UpTheVine.lua` | Main game loop, state transitions, HUD, menu items, and lifecycle hooks |
 | `player.lua` | Player movement, climbing, jumping, ground pound, collisions, and animation |
 | `level.lua` | Level setup, vine spawning, collectable spawning, and level progression |
@@ -62,7 +63,7 @@ This project is a Playdate Lua game. You need the [Playdate SDK](https://play.da
 Build the game from the project directory:
 
 ```sh
-pdc . UpTheVine.pdx
+pdc -k . UpTheVine.pdx
 ```
 
 Run the built game in the Playdate Simulator:
@@ -74,7 +75,7 @@ open UpTheVine.pdx
 If your SDK tools are not on your shell path, use the full path to `pdc`, for example:
 
 ```sh
-/Applications/PlaydateSDK/bin/pdc . UpTheVine.pdx
+~/Developer/PlaydateSDK/bin/pdc -k . UpTheVine.pdx
 ```
 
 ## Credits
